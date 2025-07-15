@@ -1,0 +1,7 @@
+node_modules
+dist
+CLAUDE.md
+.vscode
+.env
+.env.local
+.env.production

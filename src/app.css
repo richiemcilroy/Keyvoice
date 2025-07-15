@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* Minimal black/white theme */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --text-primary: #000000;
+  --text-secondary: #666666;
+  --border: #e5e5e5;
+  --accent: #000000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-black/20 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-black/30;
+}
+
+/* Minimal button styles */
+.btn-primary {
+  @apply bg-black text-white px-4 py-2 rounded-lg text-sm font-medium;
+  @apply transition-all duration-200 ease-out;
+  @apply hover:bg-gray-800;
+}
+
+.btn-secondary {
+  @apply bg-white text-black px-4 py-2 rounded-lg text-sm font-medium;
+  @apply border border-gray-200;
+  @apply transition-all duration-200 ease-out;
+  @apply hover:bg-gray-50;
+}
+
+.btn-text {
+  @apply text-black text-sm font-medium;
+  @apply transition-colors duration-200;
+  @apply hover:text-gray-600;
+}
+
+/* Minimal card style */
+.card {
+  @apply bg-white rounded-2xl p-8;
+  @apply border border-black/5;
+  @apply transition-all duration-200;
+}
+
+/* Clean input styling */
+.input-minimal {
+  @apply w-full px-4 py-3 rounded-xl;
+  @apply bg-gray-50 border-0;
+  @apply focus:bg-white focus:ring-2 focus:ring-black/5;
+  @apply transition-all duration-200;
+  @apply placeholder-gray-400;
+}
+
+/* Clean select styling */
+.select-minimal {
+  @apply w-full px-4 py-3 rounded-xl;
+  @apply bg-gray-50 border-0;
+  @apply focus:bg-white focus:ring-2 focus:ring-black/5;
+  @apply transition-all duration-200;
+  @apply cursor-pointer appearance-none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 1rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 3rem;
+}

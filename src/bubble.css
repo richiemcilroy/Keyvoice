@@ -1,0 +1,10 @@
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
