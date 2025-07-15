@@ -45,9 +45,17 @@ async startRecording() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async stopRecording() : Promise<Result<null, string>> {
+async stopRecording() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stop_recording") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopRecordingChunked() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_recording_chunked") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -93,6 +101,14 @@ async updateWordCount(count: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getRecordingStats() : Promise<Result<RecordingStatsUpdated, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_recording_stats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getHotkey() : Promise<Result<string | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_hotkey") };
@@ -128,6 +144,38 @@ async insertTextAtCursor(text: string) : Promise<Result<null, string>> {
 async showMainWindow() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("show_main_window") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getTranscripts(limit: number | null) : Promise<Result<Transcript[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transcripts", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getTranscriptStats() : Promise<Result<TranscriptStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transcript_stats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTranscript(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_transcript", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearAllTranscripts() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_transcripts") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -172,6 +220,38 @@ async getModelPath() : Promise<Result<string, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getAvailableModels() : Promise<Result<WhisperModelInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_available_models") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getDownloadedModels() : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_downloaded_models") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSelectedModel() : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_selected_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setSelectedModel(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_selected_model", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -185,6 +265,7 @@ hotkeyPressed: HotkeyPressed,
 modelDownloadComplete: ModelDownloadComplete,
 modelDownloadProgress: ModelDownloadProgress,
 recordingStateChanged: RecordingStateChanged,
+recordingStatsUpdated: RecordingStatsUpdated,
 transcriptionProgress: TranscriptionProgress,
 wordCountUpdated: WordCountUpdated
 }>({
@@ -194,6 +275,7 @@ hotkeyPressed: "hotkey-pressed",
 modelDownloadComplete: "model-download-complete",
 modelDownloadProgress: "model-download-progress",
 recordingStateChanged: "recording-state-changed",
+recordingStatsUpdated: "recording-stats-updated",
 transcriptionProgress: "transcription-progress",
 wordCountUpdated: "word-count-updated"
 })
@@ -214,7 +296,11 @@ export type Permission = { state: PermissionState; name: string }
 export type PermissionState = "NotNeeded" | "NotRequested" | "Granted" | "Denied"
 export type Permissions = { microphone: Permission; accessibility: Permission }
 export type RecordingStateChanged = { is_recording: boolean }
+export type RecordingStatsUpdated = { total_words: number; total_time_ms: number; overall_wpm: number; session_words: number; session_time_ms: number; session_wpm: number }
+export type Transcript = { id: string; text: string; timestamp: number; duration_ms: number; word_count: number; wpm: number; model_used: string | null }
+export type TranscriptStats = { total_words: number; total_time_ms: number; total_characters: number; overall_wpm: number; transcript_count: number }
 export type TranscriptionProgress = { text: string; is_final: boolean }
+export type WhisperModelInfo = { id: string; name: string; size_mb: number; description: string; url: string; filename: string; recommended_for: string[] }
 export type WordCountUpdated = { count: number }
 
 /** tauri-specta globals **/

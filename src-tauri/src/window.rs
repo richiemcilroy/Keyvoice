@@ -6,8 +6,9 @@ use tauri::{
 pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let mut builder = WebviewWindow::builder(app, "main", WebviewUrl::App("index.html".into()))
         .title("TalkType")
-        .inner_size(600.0, 500.0)
-        .resizable(false)
+        .inner_size(1200.0, 800.0)
+        .resizable(true)
+        .min_inner_size(1000.0, 600.0)
         .center()
         .visible(false)
         .accept_first_mouse(true);

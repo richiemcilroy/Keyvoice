@@ -1,6 +1,7 @@
-import { createSignal, onMount, For, Show, onCleanup } from "solid-js";
-import { commands, events } from "./bindings";
+import { createSignal, onMount, For, Show, onCleanup, createEffect } from "solid-js";
+import { commands, events, type WhisperModelInfo, type Transcript } from "./bindings";
 import HotkeySelector from "./components/HotkeySelector";
+import Timeline from "./components/Timeline";
 
 interface AudioDevice {
   id: string;
@@ -24,6 +25,24 @@ function App() {
   const [downloadProgress, setDownloadProgress] = createSignal(0);
   const [downloadedBytes, setDownloadedBytes] = createSignal(0);
   const [totalBytes, setTotalBytes] = createSignal(0);
+  const [availableModels, setAvailableModels] = createSignal<
+    WhisperModelInfo[]
+  >([]);
+  const [downloadedModels, setDownloadedModels] = createSignal<string[]>([]);
+  const [selectedModel, setSelectedModel] = createSignal<string | null>(null);
+  const [systemInfo, setSystemInfo] = createSignal<{ isAppleSilicon: boolean }>(
+    { isAppleSilicon: false }
+  );
+  const [recordingStats, setRecordingStats] = createSignal({
+    total_words: 0,
+    total_time_ms: 0,
+    overall_wpm: 0,
+    session_words: 0,
+    session_time_ms: 0,
+    session_wpm: 0,
+  });
+  const [transcripts, setTranscripts] = createSignal<Transcript[]>([]);
+  const [showCopiedNotification, setShowCopiedNotification] = createSignal(false);
 
   const modifierOptions = [
     { value: "rightOption", label: "Right Option (⌥)" },
@@ -35,14 +54,71 @@ function App() {
     { value: "rightShift", label: "Right Shift (⇧)" },
   ];
 
+  const loadTranscripts = async () => {
+    try {
+      const result = await commands.getTranscripts(null);
+      if (result.status === "ok") {
+        setTranscripts(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to load transcripts:", error);
+    }
+  };
+
+  const loadTranscriptStats = async () => {
+    try {
+      const result = await commands.getTranscriptStats();
+      if (result.status === "ok") {
+        const stats = result.data;
+        setWordCount(stats.total_words);
+        setRecordingStats({
+          total_words: stats.total_words,
+          total_time_ms: stats.total_time_ms,
+          overall_wpm: stats.overall_wpm,
+          session_words: 0,
+          session_time_ms: 0,
+          session_wpm: 0,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load transcript stats:", error);
+    }
+  };
+
   onMount(async () => {
-    // Check if model is downloaded
-    const modelResult = await commands.checkModelDownloaded();
-    if (modelResult.status === "ok") {
-      setModelDownloaded(modelResult.data);
+    const isAppleSilicon =
+      navigator.userAgent.includes("Mac") &&
+      (navigator.userAgent.includes("ARM") ||
+        (window.navigator as any).cpuClass === "ARM" ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+    setSystemInfo({ isAppleSilicon });
+
+    const modelsResult = await commands.getAvailableModels();
+    if (modelsResult.status === "ok") {
+      setAvailableModels(modelsResult.data);
     }
 
-    // Listen for download events
+    const downloadedResult = await commands.getDownloadedModels();
+    let downloadedModelsList: string[] = [];
+    if (downloadedResult.status === "ok") {
+      downloadedModelsList = downloadedResult.data;
+      setDownloadedModels(downloadedResult.data);
+    }
+
+    const selectedResult = await commands.getSelectedModel();
+    if (selectedResult.status === "ok" && selectedResult.data) {
+      setSelectedModel(selectedResult.data);
+      setModelDownloaded(downloadedModelsList.includes(selectedResult.data));
+    } else if (modelsResult.status === "ok" && modelsResult.data.length > 0) {
+      const recommended = modelsResult.data.find(
+        (m) => m.id === "large-v3-turbo-q8_0"
+      );
+      if (recommended) {
+        setSelectedModel(recommended.id);
+        await commands.setSelectedModel(recommended.id);
+      }
+    }
+
     const progressUnlisten = await events.modelDownloadProgress.listen(
       (event) => {
         setDownloadProgress(event.payload.progress);
@@ -52,43 +128,46 @@ function App() {
     );
 
     const completeUnlisten = await events.modelDownloadComplete.listen(
-      (event) => {
+      async (event) => {
         setModelDownloaded(event.payload.success);
         setIsDownloading(false);
         if (!event.payload.success && event.payload.error) {
           console.error("Model download failed:", event.payload.error);
+        } else if (event.payload.success) {
+          const downloadedResult = await commands.getDownloadedModels();
+          if (downloadedResult.status === "ok") {
+            setDownloadedModels(downloadedResult.data);
+          }
         }
       }
     );
 
-    // Load initial data
     try {
       const devicesResult = await commands.getAudioDevices();
       if (devicesResult.status === "ok") {
         setAudioDevices(devicesResult.data);
 
-        // Check for saved device selection first
         const currentDeviceResult = await commands.getCurrentDevice();
         if (currentDeviceResult.status === "ok" && currentDeviceResult.data) {
           setSelectedDevice(currentDeviceResult.data);
         } else {
-          // Select default device if no saved selection
           const defaultDevice = devicesResult.data.find((d) => d.is_default);
           if (defaultDevice) {
             setSelectedDevice(defaultDevice.id);
-            // Save the default selection
             await commands.setRecordingDevice(defaultDevice.id);
           }
         }
       }
 
-      // Get word count
       const countResult = await commands.getWordCount();
       if (countResult.status === "ok") {
         setWordCount(countResult.data);
       }
 
-      // Check permissions
+      // Load transcripts and stats from transcript store instead
+      await loadTranscripts();
+      await loadTranscriptStats();
+
       const permissionsResult = await commands.checkPermissions();
       if (permissionsResult.status === "ok") {
         setMicPermission(permissionsResult.data.microphone.state === "Granted");
@@ -97,11 +176,9 @@ function App() {
         );
       }
 
-      // Get current hotkey and register it
       const hotkeyResult = await commands.getHotkey();
       if (hotkeyResult.status === "ok" && hotkeyResult.data) {
         setCurrentHotkey(hotkeyResult.data);
-        // Register the saved hotkey with the backend
         console.log("Registering saved hotkey:", hotkeyResult.data);
         const setHotkeyResult = await commands.setHotkey(hotkeyResult.data);
         if (setHotkeyResult.status === "ok") {
@@ -114,13 +191,11 @@ function App() {
       console.error("Failed to load initial data:", error);
     }
 
-    // Listen for Fn key state changes
     const fnKeyUnlisten = await events.fnKeyStateChanged.listen((event) => {
       console.log("Fn key state changed:", event.payload.is_pressed);
       setFnKeyPressed(event.payload.is_pressed);
     });
 
-    // Listen for recording state changes
     const recordingUnlisten = await events.recordingStateChanged.listen(
       (event) => {
         console.log("Recording state changed:", event.payload.is_recording);
@@ -128,10 +203,15 @@ function App() {
       }
     );
 
-    // Set up periodic permission checking
-    const permissionCheckInterval = setInterval(refreshPermissions, 5000); // Check every 5 seconds
+    const statsUnlisten = await events.recordingStatsUpdated.listen(async (event) => {
+      console.log("Recording stats updated:", event.payload);
+      setRecordingStats(event.payload);
+      // Reload transcripts when new recording is added
+      await loadTranscripts();
+    });
 
-    // Check permissions when window gains focus
+    const permissionCheckInterval = setInterval(refreshPermissions, 5000);
+
     const handleWindowFocus = () => {
       refreshPermissions();
     };
@@ -143,6 +223,7 @@ function App() {
       recordingUnlisten();
       progressUnlisten();
       completeUnlisten();
+      statsUnlisten();
       clearInterval(permissionCheckInterval);
       window.removeEventListener("focus", handleWindowFocus);
     });
@@ -163,7 +244,6 @@ function App() {
     try {
       const result = await commands.requestMicrophonePermission();
       if (result.status === "ok") {
-        // After requesting, check permissions again to get updated state
         const permissionsResult = await commands.checkPermissions();
         if (permissionsResult.status === "ok") {
           setMicPermission(
@@ -178,10 +258,8 @@ function App() {
 
   const requestAccessibilityPermission = async () => {
     try {
-      // Open macOS accessibility settings directly
       await commands.requestAccessibilityPermission();
 
-      // After requesting, check permissions again to get updated state
       const permissionsResult = await commands.checkPermissions();
       if (permissionsResult.status === "ok") {
         setAccessibilityPermission(
@@ -247,38 +325,76 @@ function App() {
     }
   };
 
+  const handleCopyText = (text: string) => {
+    setShowCopiedNotification(true);
+    setTimeout(() => setShowCopiedNotification(false), 2000);
+  };
+
   return (
     <div class="min-h-screen bg-white relative overflow-hidden">
-      {/* Draggable title bar area */}
       <div
         data-tauri-drag-region
         class="absolute top-0 left-0 right-0 h-16 z-50"
         style="-webkit-app-region: drag;"
       />
-      <div class="p-8 pt-20">
-        <div class="w-full max-w-md mx-auto">
-          <h1 class="text-4xl font-bold text-black mb-2">TalkType.</h1>
-          <p class="text-gray-500 text-sm mb-10">
-            Your voice, transcribed instantly.
-          </p>
+      
+      <Show when={showCopiedNotification()}>
+        <div class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-black text-white px-4 py-2 rounded-lg text-sm z-50 animate-fade-in">
+          Copied to clipboard
+        </div>
+      </Show>
 
-          {/* Word Counter */}
-          <div class="mb-12">
-            <div class="text-5xl font-bold text-black mb-1">{wordCount()}</div>
-            <p class="text-gray-400 text-xs">words transcribed</p>
-          </div>
-
-          {/* Recording Status */}
-          <Show when={isRecording()}>
-            <div class="fixed top-20 right-8">
-              <div class="flex items-center bg-black text-white px-4 py-2 rounded-lg">
-                <div class="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></div>
-                <span class="text-xs font-medium">Recording</span>
+      <div class="flex flex-col h-screen pt-16">
+        {/* Header with title and stats */}
+        <div class="px-8 py-6 border-b border-gray-100">
+          <div class="max-w-6xl mx-auto">
+            <div class="flex items-start justify-between">
+              <div>
+                <h1 class="text-4xl font-bold text-black mb-2">TalkType.</h1>
+                <p class="text-gray-500 text-sm">
+                  Your voice, transcribed instantly.
+                </p>
+              </div>
+              <div class="flex gap-12">
+                <div class="text-center">
+                  <div class="text-4xl font-bold text-black mb-1">
+                    {wordCount()}
+                  </div>
+                  <p class="text-gray-400 text-xs">words transcribed</p>
+                </div>
+                <div class="text-center">
+                  <div class="text-4xl font-bold text-black mb-1">
+                    {recordingStats().overall_wpm.toFixed(0)}
+                  </div>
+                  <p class="text-gray-400 text-xs">words per minute</p>
+                </div>
               </div>
             </div>
-          </Show>
+          </div>
+        </div>
 
-          {/* Hotkey Configuration */}
+        {/* Main content - Timeline and Settings columns */}
+        <div class="flex flex-1 overflow-hidden">
+          {/* Left column - Timeline */}
+          <div class="w-1/2 border-r border-gray-100 p-8 overflow-hidden">
+            <h2 class="text-xl font-semibold text-black mb-6">Timeline</h2>
+            <Timeline transcripts={transcripts()} onCopyText={handleCopyText} />
+          </div>
+
+          {/* Right column - Settings */}
+          <div class="w-1/2 p-8 overflow-y-auto">
+            <div class="max-w-md">
+              <h2 class="text-xl font-semibold text-black mb-6">Settings</h2>
+
+              <Show when={isRecording()}>
+                <div class="mb-6">
+                  <div class="flex items-center bg-black text-white px-4 py-2 rounded-lg inline-flex">
+                    <div class="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></div>
+                    <span class="text-xs font-medium">Recording</span>
+                  </div>
+                </div>
+              </Show>
+
           <div class="mb-6">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
               Push-to-Talk
@@ -304,7 +420,6 @@ function App() {
             </div>
           </div>
 
-          {/* Hotkey Selector Modal */}
           <Show when={showHotkeySelector()}>
             <HotkeySelector
               currentHotkey={currentHotkey()}
@@ -313,7 +428,6 @@ function App() {
             />
           </Show>
 
-          {/* Microphone Selection */}
           <div class="mb-6">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
               Microphone
@@ -333,18 +447,50 @@ function App() {
             </select>
           </div>
 
-          {/* Whisper Model Download */}
           <div class="mb-6">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
               AI Model
             </h3>
+            <Show when={availableModels().length > 0}>
+              <select
+                value={selectedModel() || ""}
+                onChange={async (e) => {
+                  const modelId = e.currentTarget.value;
+                  if (modelId) {
+                    setSelectedModel(modelId);
+                    const result = await commands.setSelectedModel(modelId);
+                    if (result.status === "ok") {
+                      setModelDownloaded(downloadedModels().includes(modelId));
+                    }
+                  }
+                }}
+                class="select-minimal mb-3"
+              >
+                <For each={availableModels()}>
+                  {(model) => {
+                    const isRecommended = model.id === "large-v3-turbo-q8_0";
+                    const isDownloaded = downloadedModels().includes(model.id);
+                    return (
+                      <option value={model.id}>
+                        {model.name} ({model.size_mb}MB)
+                        {isRecommended && " ⭐ Recommended"}
+                        {isDownloaded && " ✓"}
+                      </option>
+                    );
+                  }}
+                </For>
+              </select>
+            </Show>
             <div class="p-4 bg-gray-50 rounded-xl">
               <Show
                 when={!modelDownloaded()}
                 fallback={
                   <div class="flex items-center justify-between">
                     <div>
-                      <p class="text-sm font-medium text-black">Whisper</p>
+                      <p class="text-sm font-medium text-black">
+                        {availableModels().find((m) => m.id === selectedModel())
+                          ?.name || "Whisper"}
+                      </p>
                       <p class="text-xs text-gray-400">
                         Ready for transcription
                       </p>
@@ -374,7 +520,11 @@ function App() {
                     <div>
                       <div class="flex items-center justify-between mb-3">
                         <div>
-                          <p class="text-sm font-medium text-black">Whisper</p>
+                          <p class="text-sm font-medium text-black">
+                            {availableModels().find(
+                              (m) => m.id === selectedModel()
+                            )?.name || "Whisper"}
+                          </p>
                           <p class="text-xs text-gray-400">
                             Downloading model...
                           </p>
@@ -410,21 +560,29 @@ function App() {
                 >
                   <div class="flex items-center justify-between">
                     <div>
-                      <p class="text-sm font-medium text-black">Whisper</p>
+                      <p class="text-sm font-medium text-black">
+                        {availableModels().find((m) => m.id === selectedModel())
+                          ?.name || "Select a model"}
+                      </p>
                       <p class="text-xs text-gray-400">
-                        Local AI transcription model
+                        {availableModels().find((m) => m.id === selectedModel())
+                          ?.description || "Local AI transcription"}
                       </p>
                     </div>
-                    <button onClick={handleModelDownload} class="btn-secondary">
-                      Download
-                    </button>
+                    <Show when={selectedModel()}>
+                      <button
+                        onClick={handleModelDownload}
+                        class="btn-secondary"
+                      >
+                        Download
+                      </button>
+                    </Show>
                   </div>
                 </Show>
               </Show>
             </div>
           </div>
 
-          {/* Permissions */}
           <div class="">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
               Permissions
@@ -502,9 +660,7 @@ function App() {
             </div>
           </div>
 
-          {/* Footer */}
-          <div class="mt-12 pt-6 border-t border-gray-100">
-            <p class="text-xs text-gray-300 text-center">© 2025 TalkType</p>
+            </div>
           </div>
         </div>
       </div>
