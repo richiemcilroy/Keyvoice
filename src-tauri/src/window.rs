@@ -6,18 +6,20 @@ use tauri::{
 pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let mut builder = WebviewWindow::builder(app, "main", WebviewUrl::App("index.html".into()))
         .title("TalkType")
-        .inner_size(1200.0, 800.0)
+        .inner_size(990.0, 665.0)
         .resizable(true)
-        .min_inner_size(1000.0, 600.0)
+        .min_inner_size(990.0, 665.0)
+        .max_inner_size(990.0, 665.0)
         .center()
         .visible(false)
-        .accept_first_mouse(true);
+        .accept_first_mouse(true)
+        .maximizable(false);
 
     #[cfg(target_os = "macos")]
     {
         builder = builder
             .hidden_title(true)
-            .title_bar_style(tauri::TitleBarStyle::Transparent);
+            .title_bar_style(tauri::TitleBarStyle::Overlay);
     }
 
     #[cfg(target_os = "windows")]
@@ -51,20 +53,9 @@ pub fn setup_window_handlers(window: &WebviewWindow, app_handle: &AppHandle) {
                 let _: () = msg_send![ns_window, setTitlebarAppearsTransparent: true];
                 let _: () = msg_send![ns_window, setTitleVisibility: 1];
 
-                let close_button: *mut Object = msg_send![ns_window, standardWindowButton: 0];
-                let miniaturize_button: *mut Object = msg_send![ns_window, standardWindowButton: 1];
+                // Disable the zoom (maximize) button
                 let zoom_button: *mut Object = msg_send![ns_window, standardWindowButton: 2];
-
-                if !close_button.is_null() {
-                    let _: () = msg_send![close_button, setFrameOrigin: (14.0, 6.0)];
-                }
-
-                if !miniaturize_button.is_null() {
-                    let _: () = msg_send![miniaturize_button, setFrameOrigin: (34.0, 6.0)];
-                }
-
                 if !zoom_button.is_null() {
-                    let _: () = msg_send![zoom_button, setFrameOrigin: (54.0, 6.0)];
                     let _: () = msg_send![zoom_button, setEnabled: false];
                 }
             }
@@ -197,7 +188,7 @@ pub fn create_bubble_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     {
         builder = builder
             .hidden_title(true)
-            .title_bar_style(tauri::TitleBarStyle::Transparent);
+            .title_bar_style(tauri::TitleBarStyle::Overlay);
     }
 
     builder.build()

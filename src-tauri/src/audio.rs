@@ -27,6 +27,7 @@ pub struct AudioManager {
     current_stream: Arc<Mutex<AudioStream>>,
     app_handle: Arc<Mutex<Option<AppHandle>>>,
     sample_rate: Arc<Mutex<u32>>,
+    peak_level: Arc<Mutex<f32>>,
 }
 
 impl AudioManager {
@@ -38,6 +39,7 @@ impl AudioManager {
             current_stream: Arc::new(Mutex::new(AudioStream(None))),
             app_handle: Arc::new(Mutex::new(None)),
             sample_rate: Arc::new(Mutex::new(16000)),
+            peak_level: Arc::new(Mutex::new(0.0)),
         }
     }
 
@@ -84,6 +86,7 @@ impl AudioManager {
         }
 
         self.audio_buffer.lock().await.clear();
+        *self.peak_level.lock().await = 0.0;
 
         let host = cpal::default_host();
         let device = if let Some(device_id) = self.current_device.lock().await.as_ref() {
@@ -106,6 +109,7 @@ impl AudioManager {
 
         let audio_buffer_clone = self.audio_buffer.clone();
         let app_handle_clone = self.app_handle.lock().await.clone();
+        let peak_level_clone = self.peak_level.clone();
 
         let sample_format = default_config.sample_format();
 
@@ -116,18 +120,21 @@ impl AudioManager {
                     cfg,
                     audio_buffer_clone.clone(),
                     app_handle_clone.clone(),
+                    peak_level_clone.clone(),
                 ),
                 cpal::SampleFormat::I16 => self.build_input_stream::<i16>(
                     &device,
                     cfg,
                     audio_buffer_clone.clone(),
                     app_handle_clone.clone(),
+                    peak_level_clone.clone(),
                 ),
                 cpal::SampleFormat::U16 => self.build_input_stream::<u16>(
                     &device,
                     cfg,
                     audio_buffer_clone.clone(),
                     app_handle_clone.clone(),
+                    peak_level_clone.clone(),
                 ),
                 _ => Err("Unsupported sample format".to_string()),
             }
@@ -175,6 +182,7 @@ impl AudioManager {
         config: cpal::StreamConfig,
         audio_buffer: Arc<Mutex<Vec<f32>>>,
         app_handle: Option<AppHandle>,
+        peak_level: Arc<Mutex<f32>>,
     ) -> Result<cpal::Stream, String>
     where
         T: cpal::Sample + cpal::SizedSample,
@@ -205,6 +213,12 @@ impl AudioManager {
                     }
 
                     let rms = (sum / frames as f32).sqrt();
+                    
+                    let mut current_peak = peak_level.blocking_lock();
+                    if rms > *current_peak {
+                        *current_peak = rms;
+                    }
+                    drop(current_peak);
 
                     if let Some(ref handle) = app_handle {
                         AudioLevelUpdate { level: rms }.emit(handle).ok();
@@ -218,11 +232,11 @@ impl AudioManager {
         Ok(stream)
     }
 
-    pub async fn stop_recording(&self) -> Result<(Vec<f32>, u32), String> {
+    pub async fn stop_recording(&self) -> Result<(Vec<f32>, u32, f32), String> {
         println!("⏹️ AudioManager: Stopping recording");
 
         if !self.is_recording.load(Ordering::SeqCst) {
-            return Ok((vec![], 16000));
+            return Ok((vec![], 16000, 0.0));
         }
 
         self.is_recording.store(false, Ordering::SeqCst);
@@ -232,9 +246,10 @@ impl AudioManager {
 
         let buffer = self.audio_buffer.lock().await;
         let sample_rate = *self.sample_rate.lock().await;
+        let peak_level = *self.peak_level.lock().await;
 
-        println!("📊 Recorded {} samples at {} Hz", buffer.len(), sample_rate);
+        println!("📊 Recorded {} samples at {} Hz, peak level: {:.4}", buffer.len(), sample_rate, peak_level);
 
-        Ok((buffer.clone(), sample_rate))
+        Ok((buffer.clone(), sample_rate, peak_level))
     }
 }

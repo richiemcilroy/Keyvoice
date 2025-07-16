@@ -99,8 +99,17 @@ impl TranscriptStore {
         let total_time_ms: f64 = self.transcripts.iter().map(|t| t.duration_ms).sum();
         let total_characters: u32 = self.transcripts.iter().map(|t| t.text.len() as u32).sum();
         
-        let overall_wpm = if total_time_ms > 0.0 {
-            (total_words as f64 / (total_time_ms / 60000.0)) as f32
+        // Only include transcripts with more than 10 words for WPM calculation
+        let wpm_eligible_transcripts: Vec<&Transcript> = self.transcripts
+            .iter()
+            .filter(|t| t.word_count > 10)
+            .collect();
+        
+        let wpm_total_words: u32 = wpm_eligible_transcripts.iter().map(|t| t.word_count).sum();
+        let wpm_total_time_ms: f64 = wpm_eligible_transcripts.iter().map(|t| t.duration_ms).sum();
+        
+        let overall_wpm = if wpm_total_time_ms > 0.0 {
+            (wpm_total_words as f64 / (wpm_total_time_ms / 60000.0)) as f32
         } else {
             0.0
         };

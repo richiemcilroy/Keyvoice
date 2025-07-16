@@ -4,6 +4,7 @@ import { commands, type Transcript } from "../bindings";
 interface TimelineProps {
   transcripts: Transcript[];
   onCopyText: (text: string) => void;
+  onDeleteTranscript: (id: string) => void;
 }
 
 export default function Timeline(props: TimelineProps) {
@@ -62,12 +63,14 @@ export default function Timeline(props: TimelineProps) {
   };
 
   return (
-    <div class="h-full overflow-y-auto">
+    <div class="h-full overflow-y-auto px-8 pb-20">
       <For each={groupedTranscripts()}>
         {([groupKey, transcripts]) => (
           <div class="mb-8">
-            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4 sticky top-0 bg-white py-2">
-              {groupKey}
+            <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4 sticky z-40 top-0 py-2">
+              <span class="bg-dark-secondary px-3 py-1 rounded-full">
+                {groupKey}
+              </span>
             </h3>
             <div class="space-y-3">
               <For each={transcripts}>
@@ -78,40 +81,45 @@ export default function Timeline(props: TimelineProps) {
                     onMouseLeave={() => setHoveredId(null)}
                   >
                     <div class="flex gap-4">
-                      <div class="flex-shrink-0 text-xs text-gray-400 w-20">
+                      <div class="flex-shrink-0 text-xs text-gray-500 w-20">
                         {formatTime(transcript.timestamp)}
                       </div>
                       <div class="flex-1">
-                        <p class="text-sm text-gray-700 leading-relaxed">
+                        <p class="text-sm text-gray-300 leading-relaxed">
                           {transcript.text}
                         </p>
                         <Show when={transcript.text === ""}>
-                          <p class="text-sm text-gray-400 italic">
+                          <p class="text-sm text-gray-500 italic">
                             Audio is silent.
                           </p>
                         </Show>
                       </div>
                     </div>
-                    <Show when={hoveredId() === transcript.id && transcript.text}>
-                      <button
-                        onClick={() => handleCopy(transcript.text)}
-                        class="absolute right-0 top-0 p-1 bg-white border border-gray-200 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Copy text"
-                      >
-                        <svg
-                          class="w-4 h-4 text-gray-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                    <Show when={hoveredId() === transcript.id}>
+                      <div class="absolute right-0 top-0 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Show when={transcript.text}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopy(transcript.text);
+                            }}
+                            class="px-3 py-1 bg-gray-800 text-gray-300 text-xs font-medium rounded hover:bg-gray-700 transition-colors"
+                          >
+                            Copy
+                          </button>
+                        </Show>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm("Delete this transcript?")) {
+                              props.onDeleteTranscript(transcript.id);
+                            }
+                          }}
+                          class="px-3 py-1 bg-gray-800 text-gray-300 text-xs font-medium rounded hover:bg-red-900 hover:text-red-200 transition-colors"
                         >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                          />
-                        </svg>
-                      </button>
+                          Delete
+                        </button>
+                      </div>
                     </Show>
                   </div>
                 )}
@@ -122,8 +130,8 @@ export default function Timeline(props: TimelineProps) {
       </For>
       <Show when={props.transcripts.length === 0}>
         <div class="text-center py-12">
-          <p class="text-gray-400 text-sm">No transcriptions yet</p>
-          <p class="text-gray-300 text-xs mt-1">
+          <p class="text-gray-500 text-sm">No transcriptions yet</p>
+          <p class="text-gray-600 text-xs mt-1">
             Press your hotkey to start recording
           </p>
         </div>

@@ -2,6 +2,7 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
     AppHandle, Manager, Runtime, Emitter,
+    image::Image,
 };
 use crate::audio::{AudioManager};
 use crate::permissions::{Permissions, PermissionState};
@@ -96,9 +97,26 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     
     let menu = Menu::with_items(app, &menu_items)?;
     
+    let tray_icon = if let Ok(icon_path) = app.path().resolve("icons/tray-icon.png", tauri::path::BaseDirectory::Resource) {
+        if let Ok(icon_bytes) = std::fs::read(&icon_path) {
+            if let Ok(rgba) = image::load_from_memory(&icon_bytes) {
+                let rgba_data = rgba.to_rgba8();
+                let (width, height) = rgba_data.dimensions();
+                let raw_data = rgba_data.into_raw();
+                Some(Image::new_owned(raw_data, width, height))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
     let _ = TrayIconBuilder::with_id("main")
-        .icon(app.default_window_icon().unwrap().clone())
-        .icon_as_template(true)
+        .icon(tray_icon.unwrap_or_else(|| app.default_window_icon().unwrap().clone()))
+        .icon_as_template(false)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app: &AppHandle<R>, event| {

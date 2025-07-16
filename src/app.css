@@ -1,13 +1,12 @@
 @import "tailwindcss";
 
-/* Minimal black/white theme */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #fafafa;
-  --text-primary: #000000;
-  --text-secondary: #666666;
-  --border: #e5e5e5;
-  --accent: #000000;
+  --bg-primary: #1b1b1b;
+  --bg-secondary: #2b2b2b;
+  --text-primary: #ffffff;
+  --text-secondary: #999999;
+  --border: #3b3b3b;
+  --accent: #ffffff;
 }
 
 * {
@@ -18,12 +17,25 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #1b1b1b;
+  color: #ffffff;
+  margin: 0;
+  padding: 0;
 }
 
-/* Minimal scrollbar */
+.bg-dark { background-color: #1b1b1b; }
+.bg-dark-secondary { background-color: #2b2b2b; }
+.bg-dark-tertiary { background-color: #3b3b3b; }
+.text-dark { color: #1b1b1b; }
+.border-dark-secondary { border-color: #2b2b2b; }
+
+.bg-dark-secondary svg {
+  color: inherit;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 3px;
+  height: 3px;
 }
 
 ::-webkit-scrollbar-track {
@@ -31,64 +43,80 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-black/20 rounded-full;
+  @apply bg-white/10 rounded-full;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-black/30;
+  @apply bg-white/20;
 }
 
-/* Minimal button styles */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .btn-primary {
-  @apply bg-black text-white px-4 py-2 rounded-lg text-sm font-medium;
+  @apply bg-white px-4 py-2 rounded-lg text-sm font-medium;
   @apply transition-all duration-200 ease-out;
-  @apply hover:bg-gray-800;
+  @apply hover:bg-gray-200;
+  color: #1b1b1b;
 }
 
 .btn-secondary {
-  @apply bg-white text-black px-4 py-2 rounded-lg text-sm font-medium;
-  @apply border border-gray-200;
+  @apply text-white px-4 py-2 rounded-lg text-sm font-medium;
   @apply transition-all duration-200 ease-out;
-  @apply hover:bg-gray-50;
+  background-color: #3a3a3a;
+}
+
+.btn-secondary:hover {
+  background-color: #4a4a4a;
 }
 
 .btn-text {
-  @apply text-black text-sm font-medium;
+  @apply text-white text-sm font-medium;
   @apply transition-colors duration-200;
-  @apply hover:text-gray-600;
+  @apply hover:text-gray-400;
 }
 
-/* Minimal card style */
 .card {
-  @apply bg-white rounded-2xl p-8;
-  @apply border border-black/5;
+  @apply rounded-2xl p-8;
+  @apply border border-white/10;
   @apply transition-all duration-200;
+  background-color: #2b2b2b;
 }
 
-/* Clean input styling */
 .input-minimal {
   @apply w-full px-4 py-3 rounded-xl;
-  @apply bg-gray-50 border-0;
-  @apply focus:bg-white focus:ring-2 focus:ring-black/5;
+  @apply border border-white/10;
+  @apply focus:ring-2 focus:ring-white/20;
   @apply transition-all duration-200;
-  @apply placeholder-gray-400;
+  @apply placeholder-gray-500;
+  background-color: #2b2b2b;
 }
 
-/* Clean select styling */
+.input-minimal:focus {
+  background-color: #3b3b3b;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 .select-minimal {
   @apply w-full px-4 py-3 rounded-xl;
-  @apply bg-gray-50 border-0;
-  @apply focus:bg-white focus:ring-2 focus:ring-black/5;
+  @apply border border-white/10 text-white text-sm font-medium;
+  @apply focus:ring-2 focus:ring-white/20;
   @apply transition-all duration-200;
   @apply cursor-pointer appearance-none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-color: #2b2b2b;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
   background-position: right 1rem center;
   background-repeat: no-repeat;
   background-size: 1.5em 1.5em;
   padding-right: 3rem;
 }
 
-/* Fade in animation */
+.select-minimal:focus {
+  background-color: #3b3b3b;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

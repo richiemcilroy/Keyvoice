@@ -16,7 +16,7 @@ use transcripts::{Transcript, TranscriptStore};
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::{State, Manager, Listener};
+use tauri::{State, Manager, Listener, RunEvent};
 use tauri_plugin_store::StoreExt;
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -192,11 +192,14 @@ async fn stop_recording(
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
     
-    let (audio_data, sample_rate) = audio_manager.stop_recording().await?;
+    let (audio_data, sample_rate, peak_level) = audio_manager.stop_recording().await?;
     let stop_recording_time = start_time.elapsed();
     println!("⏱️ Stop recording took: {:?}", stop_recording_time);
     
-    if audio_data.is_empty() {
+    const SILENCE_THRESHOLD: f32 = 0.01;
+    
+    if audio_data.is_empty() || peak_level < SILENCE_THRESHOLD {
+        println!("🔇 Skipping transcription - no meaningful audio detected (peak level: {:.4})", peak_level);
         return Ok(String::new());
     }
     
@@ -210,6 +213,12 @@ async fn stop_recording(
     };
     let transcribe_time = transcribe_start.elapsed();
     println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
+    
+    let trimmed_text = text.trim();
+    if trimmed_text.chars().all(|c| c.is_whitespace() || c.is_ascii_punctuation()) {
+        println!("🔇 Skipping transcription - only contains punctuation/whitespace: '{}'", trimmed_text);
+        return Ok(String::new());
+    }
     
     let words = text.split_whitespace().count() as u32;
     if words > 0 || audio_data.len() > 0 {
@@ -232,7 +241,7 @@ async fn stop_recording(
             0.0
         };
         
-        let session_wpm = if session_duration_ms > 0.0 {
+        let session_wpm = if session_duration_ms > 0.0 && words > 10 {
             (words as f32 / (session_duration_ms as f32 / 60000.0))
         } else {
             0.0
@@ -253,7 +262,6 @@ async fn stop_recording(
         
         WordCountUpdated { count: settings.word_count }.emit(&app).ok();
         
-        // Save transcript to store
         if !text.is_empty() {
             let transcript = Transcript {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -279,6 +287,111 @@ async fn stop_recording(
 
 #[tauri::command]
 #[specta::specta]
+async fn stop_recording_manual(
+    app: tauri::AppHandle,
+    audio_manager: State<'_, Arc<AudioManager>>,
+    whisper_model: State<'_, Arc<Mutex<WhisperModel>>>,
+) -> Result<String, String> {
+    let start_time = std::time::Instant::now();
+    
+    let (audio_data, sample_rate, peak_level) = audio_manager.stop_recording().await?;
+    let stop_recording_time = start_time.elapsed();
+    println!("⏱️ Stop recording took: {:?}", stop_recording_time);
+    
+    const SILENCE_THRESHOLD: f32 = 0.01;
+    
+    if audio_data.is_empty() || peak_level < SILENCE_THRESHOLD {
+        println!("🔇 Skipping transcription - no meaningful audio detected (peak level: {:.4})", peak_level);
+        return Ok(String::new());
+    }
+    
+    let audio_duration_secs = audio_data.len() as f32 / sample_rate as f32;
+    println!("🎙️ Audio duration: {:.2}s ({} samples at {} Hz)", audio_duration_secs, audio_data.len(), sample_rate);
+    
+    let transcribe_start = std::time::Instant::now();
+    let text = {
+        let model = whisper_model.lock().unwrap();
+        model.transcribe(&audio_data, sample_rate)?
+    };
+    let transcribe_time = transcribe_start.elapsed();
+    println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
+    
+    let trimmed_text = text.trim();
+    if trimmed_text.is_empty() || trimmed_text.chars().all(|c| c.is_ascii_punctuation() || c.is_whitespace()) {
+        println!("🔇 Skipping - transcription contains no meaningful text");
+        return Ok(String::new());
+    }
+    
+    let word_stats_start = std::time::Instant::now();
+    
+    let words = text.split_whitespace().count() as u32;
+    
+    if words > 0 {
+        let mut settings = AppSettings::get_or_default(&app);
+        let session_duration_ms = if let Some(start_time) = settings.current_session_start {
+            (chrono::Utc::now().timestamp_millis() - start_time) as f64
+        } else {
+            0.0
+        };
+        
+        let session_wpm = if session_duration_ms > 0.0 {
+            (words as f64 / (session_duration_ms / 60000.0)) as f32
+        } else {
+            0.0
+        };
+        
+        settings.word_count += words;
+        settings.total_recording_time_ms += session_duration_ms;
+        settings.last_recording_time = Some(chrono::Utc::now().timestamp_millis());
+        settings.current_session_start = None;
+        
+        let overall_wpm = if settings.total_recording_time_ms > 0.0 {
+            (settings.word_count as f64 / (settings.total_recording_time_ms / 60000.0)) as f32
+        } else {
+            0.0
+        };
+        
+        AppSettings::set(&app, &settings)?;
+        
+        let _ = WordCountUpdated { count: settings.word_count }.emit(&app);
+        
+        let _ = RecordingStatsUpdated {
+            total_words: settings.word_count,
+            total_time_ms: settings.total_recording_time_ms,
+            overall_wpm,
+            session_words: words,
+            session_time_ms: session_duration_ms,
+            session_wpm,
+        }.emit(&app);
+        
+        if words > 0 {
+            let transcript = Transcript {
+                id: uuid::Uuid::new_v4().to_string(),
+                text: text.clone(),
+                timestamp: chrono::Utc::now().timestamp_millis() as f64,
+                duration_ms: session_duration_ms,
+                word_count: words,
+                wpm: session_wpm,
+                model_used: settings.selected_model.clone(),
+            };
+            
+            let mut store = TranscriptStore::load(&app).unwrap_or_default();
+            store.add_transcript(transcript);
+            let _ = store.save(&app);
+        }
+    }
+    
+    let word_stats_time = word_stats_start.elapsed();
+    println!("⏱️ Word stats update took: {:?}", word_stats_time);
+    
+    let total_time = start_time.elapsed();
+    println!("⏱️ Total stop_recording_manual command took: {:?}", total_time);
+    
+    Ok(text)
+}
+
+#[tauri::command]
+#[specta::specta]
 async fn stop_recording_chunked(
     app: tauri::AppHandle,
     audio_manager: State<'_, Arc<AudioManager>>,
@@ -286,11 +399,14 @@ async fn stop_recording_chunked(
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
     
-    let (audio_data, sample_rate) = audio_manager.stop_recording().await?;
+    let (audio_data, sample_rate, peak_level) = audio_manager.stop_recording().await?;
     let stop_recording_time = start_time.elapsed();
     println!("⏱️ Stop recording took: {:?}", stop_recording_time);
     
-    if audio_data.is_empty() {
+    const SILENCE_THRESHOLD: f32 = 0.01;
+    
+    if audio_data.is_empty() || peak_level < SILENCE_THRESHOLD {
+        println!("🔇 Skipping transcription - no meaningful audio detected (peak level: {:.4})", peak_level);
         return Ok(String::new());
     }
     
@@ -320,6 +436,12 @@ async fn stop_recording_chunked(
     let transcribe_time = transcribe_start.elapsed();
     println!("⏱️ Chunked transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
     
+    let trimmed_text = text.trim();
+    if trimmed_text.chars().all(|c| c.is_whitespace() || c.is_ascii_punctuation()) {
+        println!("🔇 Skipping transcription - only contains punctuation/whitespace: '{}'", trimmed_text);
+        return Ok(String::new());
+    }
+    
     let words = text.split_whitespace().count() as u32;
     if words > 0 || audio_data.len() > 0 {
         let end_time = chrono::Utc::now().timestamp_millis();
@@ -341,7 +463,7 @@ async fn stop_recording_chunked(
             0.0
         };
         
-        let session_wpm = if session_duration_ms > 0.0 {
+        let session_wpm = if session_duration_ms > 0.0 && words > 10 {
             (words as f32 / (session_duration_ms as f32 / 60000.0))
         } else {
             0.0
@@ -362,7 +484,6 @@ async fn stop_recording_chunked(
         
         WordCountUpdated { count: settings.word_count }.emit(&app).ok();
         
-        // Save transcript to store
         if !text.is_empty() {
             let transcript = Transcript {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -819,6 +940,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             stop_recording_chunked,
+            stop_recording_manual,
             request_microphone_permission,
             request_accessibility_permission,
             refresh_permissions,
@@ -1026,6 +1148,18 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(move |app_handle, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                println!("🔄 Dock icon clicked - reopening window");
+                let _ = window::show_main_window(&app_handle);
+            }
+            _ => {}
+        });
 }

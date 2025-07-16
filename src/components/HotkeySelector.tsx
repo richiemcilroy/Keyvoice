@@ -64,7 +64,14 @@ function HotkeySelector(props: HotkeySelectorProps) {
           <select
             value={selectedModifier()}
             onChange={(e) => setSelectedModifier(e.target.value)}
-            class="select-minimal text-sm"
+            class="w-full px-4 py-3 rounded-xl border border-gray-300 text-black bg-white focus:ring-2 focus:ring-black/10 focus:border-gray-400 transition-all duration-200 cursor-pointer appearance-none text-sm"
+            style={{
+              "background-image": "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")",
+              "background-position": "right 1rem center",
+              "background-repeat": "no-repeat",
+              "background-size": "1.5em 1.5em",
+              "padding-right": "3rem"
+            }}
           >
             <option value="">Choose...</option>
             {modifierOptions.map((option) => (
@@ -79,7 +86,7 @@ function HotkeySelector(props: HotkeySelectorProps) {
         <div class="flex gap-2">
           <button
             onClick={cancel}
-            class="flex-1 btn-secondary"
+            class="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium text-sm hover:bg-gray-200 transition-colors"
           >
             Cancel
           </button>
@@ -87,7 +94,7 @@ function HotkeySelector(props: HotkeySelectorProps) {
           <button
             onClick={handleSave}
             disabled={!selectedModifier()}
-            class="flex-1 btn-primary disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+            class="flex-1 px-4 py-2 rounded-lg bg-black text-white font-medium text-sm hover:bg-gray-900 transition-colors disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
           >
             Save
           </button>

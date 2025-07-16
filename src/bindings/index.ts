@@ -61,6 +61,14 @@ async stopRecordingChunked() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async stopRecordingManual() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_recording_manual") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async requestMicrophonePermission() : Promise<Result<boolean, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("request_microphone_permission") };

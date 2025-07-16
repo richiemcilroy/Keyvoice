@@ -1,5 +1,5 @@
 {
-  "name": "talktype",
+  "name": "TalkType",
   "version": "0.1.0",
   "description": "",
   "type": "module",
@@ -22,6 +22,7 @@
     "@tauri-apps/plugin-os": "^2.3.0",
     "@tauri-apps/plugin-store": "^2.3.0",
     "solid-js": "^1.9.3",
+    "solid-sonner": "^0.2.8",
     "tailwindcss": "^4.1.11"
   },
   "devDependencies": {
