@@ -1,0 +1,22 @@
+# Set Rust as the primary language
+*.rs linguist-language=Rust
+src-tauri/** linguist-language=Rust
+
+# Frontend files - don't count toward language stats as much
+*.ts linguist-language=TypeScript
+*.tsx linguist-language=TypeScript
+*.js linguist-language=JavaScript
+*.jsx linguist-language=JavaScript
+*.css linguist-language=CSS
+*.html linguist-language=HTML
+
+# Generated files should be ignored
+src/bindings/** linguist-generated=true
+src-tauri/gen/** linguist-generated=true
+src-tauri/target/** linguist-generated=true
+
+# Documentation and config files
+*.md linguist-documentation=true
+*.json linguist-language=JSON
+*.toml linguist-language=TOML
+*.lock linguist-generated=true 
