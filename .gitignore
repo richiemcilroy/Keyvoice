@@ -5,3 +5,4 @@ CLAUDE.md
 .env
 .env.local
 .env.production
+.cursor
