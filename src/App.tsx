@@ -15,6 +15,7 @@ import {
 import HotkeySelector from "./components/HotkeySelector";
 import Timeline from "./components/Timeline";
 import TitleBar from "./components/TitleBar";
+import MorphingBubbleLoader from "./components/MorphingBubbleLoader";
 import { Toaster, toast } from "solid-sonner";
 
 interface AudioDevice {
@@ -385,14 +386,14 @@ function App() {
       setIsProcessingTranscription(true);
 
       try {
-        const timeoutPromise = new Promise((_, reject) => {
+        const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error("Transcription timeout")), 60000);
         });
 
-        const result = (await Promise.race([
+        const result = await Promise.race([
           commands.stopRecordingManual(),
           timeoutPromise,
-        ])) as Awaited<ReturnType<typeof commands.stopRecordingManual>>;
+        ]);
 
         if (result.status === "ok") {
           const transcribedText = result.data;
@@ -409,7 +410,7 @@ function App() {
           toast.error("Failed to transcribe audio");
         }
       } catch (error) {
-        console.error("Failed to stop recording:", error);
+        console.error("Recording/transcription error:", error);
         if (
           error instanceof Error &&
           error.message === "Transcription timeout"
@@ -418,10 +419,13 @@ function App() {
             "Transcription is taking too long. Try a shorter recording."
           );
         } else {
-          toast.error("Failed to stop recording");
+          toast.error("Failed to process recording. Please try again.");
         }
       } finally {
         setIsProcessingTranscription(false);
+        // Always refresh the timeline in case the recording was saved
+        await loadTranscripts();
+        await loadTranscriptStats();
       }
     } else {
       try {
@@ -592,20 +596,7 @@ function App() {
                       fallback={
                         <>
                           <div class="absolute inset-0 flex items-center justify-center">
-                            <div class="relative w-8 h-8">
-                              <div
-                                class="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-dark rounded-full animate-spin"
-                                style="transform-origin: 50% 200%"
-                              ></div>
-                              <div
-                                class="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-dark rounded-full animate-spin"
-                                style="transform-origin: 50% 200%; animation-delay: 0.2s; opacity: 0.7"
-                              ></div>
-                              <div
-                                class="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-dark rounded-full animate-spin"
-                                style="transform-origin: 50% 200%; animation-delay: 0.4s; opacity: 0.4"
-                              ></div>
-                            </div>
+                            <MorphingBubbleLoader />
                           </div>
                         </>
                       }
