@@ -386,20 +386,18 @@ function App() {
       setIsProcessingTranscription(true);
 
       try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error("Transcription timeout")), 60000);
-        });
-
-        const result = await Promise.race([
-          commands.stopRecordingManual(),
-          timeoutPromise,
-        ]);
+        const result = await commands.stopRecordingManual();
 
         if (result.status === "ok") {
           const transcribedText = result.data;
           if (transcribedText && transcribedText.trim() !== "") {
-            await navigator.clipboard.writeText(transcribedText);
-            toast.success("Transcription copied to clipboard");
+            try {
+              await navigator.clipboard.writeText(transcribedText);
+              toast.success("Transcription copied to clipboard");
+            } catch (clipboardError) {
+              console.warn("Failed to copy to clipboard:", clipboardError);
+              toast.success("Transcription completed");
+            }
           } else {
             toast.info("No speech detected");
           }
@@ -411,21 +409,9 @@ function App() {
         }
       } catch (error) {
         console.error("Recording/transcription error:", error);
-        if (
-          error instanceof Error &&
-          error.message === "Transcription timeout"
-        ) {
-          toast.error(
-            "Transcription is taking too long. Try a shorter recording."
-          );
-        } else {
-          toast.error("Failed to process recording. Please try again.");
-        }
+        toast.error("Failed to process recording. Please try again.");
       } finally {
         setIsProcessingTranscription(false);
-        // Always refresh the timeline in case the recording was saved
-        await loadTranscripts();
-        await loadTranscriptStats();
       }
     } else {
       try {
