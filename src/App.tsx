@@ -133,7 +133,7 @@ function App() {
       setModelDownloaded(downloadedModelsList.includes(selectedResult.data));
     } else if (modelsResult.status === "ok" && modelsResult.data.length > 0) {
       const recommended = modelsResult.data.find(
-        (m) => m.id === "large-v3-turbo-q8_0"
+        (m) => m.id === "distil-large-v3.5-q8_0"
       );
       if (recommended) {
         setSelectedModel(recommended.id);
@@ -655,7 +655,7 @@ function App() {
 
               <div class="mb-6">
                 <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                  Push-to-Talk
+                  Push-to-Talk Button
                 </h3>
                 <div class="flex items-center justify-between p-4 bg-dark-secondary rounded-xl">
                   <div class="min-w-0">

@@ -68,6 +68,15 @@ impl WhisperModelInfo {
                 filename: "ggml-large-v3-turbo-q5_0.bin".to_string(),
                 recommended_for: vec!["slower_machines".to_string()],
             },
+            Self {
+                id: "distil-large-v3.5-q8_0".to_string(),
+                name: "Distil-Large v3.5 Q8".to_string(),
+                size_mb: 1520,
+                description: "4-6× faster than Large-v3 with near-equal accuracy".to_string(),
+                url: "https://huggingface.co/distil-whisper/distil-large-v3.5-ggml/resolve/main/ggml-model.bin".to_string(),
+                filename: "ggml-model.bin".to_string(),
+                recommended_for: vec!["accuracy".to_string(), "speed".to_string()],
+            },
         ]
     }
 
@@ -114,31 +123,32 @@ impl WhisperModel {
             let possible_paths = vec![
                 std::env::current_exe()
                     .ok()
-                    .and_then(|p| p.parent().map(|p| p.join("../Resources/ggml-metal.metal"))),
-                Some(std::env::current_dir().unwrap().join("ggml-metal.metal")),
-                Some(
-                    std::env::current_dir()
-                        .unwrap()
-                        .join("src-tauri/ggml-metal.metal"),
-                ),
-                Some(
-                    std::env::current_dir()
-                        .unwrap()
-                        .join("src-tauri/resources/ggml-metal.metal"),
-                ),
+                    .and_then(|p| p.parent().map(|p| p.join("../Resources"))),
+                Some(std::env::current_dir().unwrap()),
+                Some(std::env::current_dir().unwrap().join("src-tauri")),
+                Some(std::env::current_dir().unwrap().join("src-tauri/src-tauri")),
+                Some(std::env::current_dir().unwrap().join("target/debug/build")
+                    .read_dir()
+                    .ok()
+                    .and_then(|entries| {
+                        entries
+                            .filter_map(|e| e.ok())
+                            .find(|e| e.file_name().to_string_lossy().starts_with("whisper-rs-sys-"))
+                            .map(|e| e.path().join("out/build/bin"))
+                    })
+                    .unwrap_or_default()),
             ];
 
             for path_opt in possible_paths {
                 if let Some(path) = path_opt {
-                    if path.exists() {
-                        if let Some(parent) = path.parent() {
-                            std::env::set_var(
-                                "GGML_METAL_PATH_RESOURCES",
-                                parent.to_string_lossy().to_string(),
-                            );
-                            println!("🎨 Set Metal resources path to: {}", parent.display());
-                            break;
-                        }
+                    let metal_file = path.join("ggml-metal.metal");
+                    if metal_file.exists() {
+                        std::env::set_var(
+                            "GGML_METAL_PATH_RESOURCES",
+                            path.to_string_lossy().to_string(),
+                        );
+                        println!("🎨 Set Metal resources path to: {}", path.display());
+                        break;
                     }
                 }
             }
@@ -185,7 +195,6 @@ impl WhisperModel {
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
-        params.set_language(Some("en"));
 
         params.set_temperature_inc(0.0);
         params.set_temperature(0.0);
@@ -196,18 +205,22 @@ impl WhisperModel {
         params.set_max_initial_ts(0.0);
         params.set_max_len(0);
         params.set_split_on_word(false);
+        
+        params.set_token_timestamps(false);
+        params.set_n_max_text_ctx(16384);
 
         let num_threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4) as i32;
         println!("📦 Using {} threads for transcription", num_threads);
         params.set_n_threads(num_threads);
+        params.set_language(Some("en"));
+        
+        params.set_no_context(true);
 
-        let state_start = std::time::Instant::now();
         let mut state = context
             .create_state()
             .map_err(|e| format!("Failed to create state: {:?}", e))?;
-        println!("⏱️ Creating state took: {:?}", state_start.elapsed());
 
         let process_start = std::time::Instant::now();
         state
@@ -482,7 +495,6 @@ impl WhisperModel {
             params.set_print_timestamps(false);
             params.set_suppress_blank(true);
             params.set_suppress_non_speech_tokens(true);
-            params.set_language(Some("en"));
 
             params.set_temperature_inc(0.0);
             params.set_temperature(0.0);

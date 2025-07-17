@@ -100,7 +100,7 @@ body {
 
 .select-minimal {
   @apply w-full px-4 py-3 rounded-xl;
-  @apply border border-white/10 text-white text-sm font-medium;
+  @apply text-sm font-medium;
   @apply focus:ring-2 focus:ring-white/20;
   @apply transition-all duration-200;
   @apply cursor-pointer appearance-none;

@@ -5,6 +5,7 @@ mod tray;
 mod window;
 mod whisper;
 mod transcripts;
+mod sound;
 
 mod fn_key_listener;
 mod fn_key_monitor;
@@ -179,6 +180,8 @@ async fn start_recording(
     }
     
     AppSettings::set(&app, &settings)?;
+    
+    sound::play_start_sound(&app);
     
     audio_manager.start_recording().await
 }
@@ -414,27 +417,17 @@ async fn stop_recording_chunked(
     println!("🎙️ Audio duration: {:.2}s ({} samples at {} Hz)", audio_duration_secs, audio_data.len(), sample_rate);
     
     let transcribe_start = std::time::Instant::now();
-    let app_clone = app.clone();
     let text = {
         let model = whisper_model.lock().unwrap();
-        if audio_duration_secs < 10.0 {
-            let result = model.transcribe(&audio_data, sample_rate)?;
-            TranscriptionProgress {
-                text: result.clone(),
-                is_final: true,
-            }.emit(&app_clone).ok();
-            result
-        } else {
-            model.transcribe_chunked(&audio_data, sample_rate, 30.0, |partial_text, is_final| {
-                TranscriptionProgress {
-                    text: partial_text.to_string(),
-                    is_final,
-                }.emit(&app_clone).ok();
-            })?
-        }
+        model.transcribe(&audio_data, sample_rate)?
     };
     let transcribe_time = transcribe_start.elapsed();
-    println!("⏱️ Chunked transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
+    println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
+    
+    TranscriptionProgress {
+        text: text.clone(),
+        is_final: true,
+    }.emit(&app).ok();
     
     let trimmed_text = text.trim();
     if trimmed_text.chars().all(|c| c.is_whitespace() || c.is_ascii_punctuation()) {
@@ -503,6 +496,8 @@ async fn stop_recording_chunked(
     
     let total_time = start_time.elapsed();
     println!("⏱️ Total stop_recording_chunked command took: {:?}", total_time);
+    
+    sound::play_complete_sound(&app);
     
     Ok(text)
 }
@@ -1072,6 +1067,7 @@ pub fn run() {
                             let audio_manager = app_handle_fn.state::<Arc<AudioManager>>().inner().clone();
                             if payload.is_pressed {
                                 println!("🎤 Fn key pressed - Starting recording");
+                                sound::play_start_sound(&app_handle_fn);
                                 HotkeyPressed { pressed: true }.emit(&app_handle_fn).ok();
                                 RecordingStateChanged { is_recording: true }.emit(&app_handle_fn).ok();
                                 let audio_manager = audio_manager.clone();
