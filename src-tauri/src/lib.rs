@@ -4,6 +4,7 @@ mod platform;
 mod tray;
 mod window;
 mod whisper;
+mod groq;
 mod transcripts;
 mod sound;
 
@@ -73,6 +74,8 @@ pub struct AppSettings {
     pub first_recording_time: Option<i64>,
     pub last_recording_time: Option<i64>,
     pub current_session_start: Option<i64>,
+    pub whisper_language: Option<String>,
+    pub whisper_temperature: Option<f32>,
 }
 
 pub struct BubbleShowTaskState {
@@ -113,6 +116,8 @@ impl Default for AppSettings {
             first_recording_time: None,
             last_recording_time: None,
             current_session_start: None,
+            whisper_language: Some("en".to_string()),
+            whisper_temperature: Some(0.0),
         }
     }
 }
@@ -211,8 +216,27 @@ async fn stop_recording(
     
     let transcribe_start = std::time::Instant::now();
     let text = {
-        let model = whisper_model.lock().unwrap();
-        model.transcribe(&audio_data, sample_rate)?
+        let store = app.store("settings.json").map_err(|e| e.to_string())?;
+        let key_opt = match store.get("groq_api_key") {
+            Some(val) => val.as_str().map(|s| s.to_string()),
+            None => None,
+        };
+        match key_opt {
+            Some(key) => {
+                println!("☁️ Using Groq for transcription");
+                let settings = AppSettings::get_or_default(&app);
+                groq::transcribe_with_groq(&audio_data, sample_rate, settings.whisper_language, &key).await?
+            }
+            None => {
+                println!("🧠 Using local Whisper for transcription");
+                let model = whisper_model.lock().unwrap();
+                let cfg = whisper::WhisperRuntimeConfig {
+                    language: AppSettings::get_or_default(&app).whisper_language,
+                    temperature: AppSettings::get_or_default(&app).whisper_temperature,
+                };
+                model.transcribe_with_config(&audio_data, sample_rate, &cfg)?
+            }
+        }
     };
     let transcribe_time = transcribe_start.elapsed();
     println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
@@ -266,6 +290,12 @@ async fn stop_recording(
         WordCountUpdated { count: settings.word_count }.emit(&app).ok();
         
         if !text.is_empty() {
+            let store = app.store("settings.json").map_err(|e| e.to_string())?;
+            let model_used = if store.get("groq_api_key").is_some() {
+                Some("groq/whisper-large-v3".to_string())
+            } else {
+                settings.selected_model.clone()
+            };
             let transcript = Transcript {
                 id: uuid::Uuid::new_v4().to_string(),
                 text: text.clone(),
@@ -273,7 +303,7 @@ async fn stop_recording(
                 duration_ms: session_duration_ms,
                 word_count: words,
                 wpm: session_wpm,
-                model_used: settings.selected_model.clone(),
+                model_used,
             };
             
             let mut store = TranscriptStore::load(&app).unwrap_or_default();
@@ -288,6 +318,21 @@ async fn stop_recording(
     Ok(text)
 }
 
+#[tauri::command]
+#[specta::specta]
+fn get_whisper_settings(app: tauri::AppHandle) -> Result<(Option<String>, Option<f32>), String> {
+    let s = AppSettings::get_or_default(&app);
+    Ok((s.whisper_language, s.whisper_temperature))
+}
+
+#[tauri::command]
+#[specta::specta]
+fn set_whisper_settings(app: tauri::AppHandle, language: Option<String>, temperature: Option<f32>) -> Result<(), String> {
+    let mut s = AppSettings::get_or_default(&app);
+    s.whisper_language = language;
+    s.whisper_temperature = temperature;
+    AppSettings::set(&app, &s)
+}
 #[tauri::command]
 #[specta::specta]
 async fn stop_recording_manual(
@@ -313,8 +358,27 @@ async fn stop_recording_manual(
     
     let transcribe_start = std::time::Instant::now();
     let text = {
-        let model = whisper_model.lock().unwrap();
-        model.transcribe(&audio_data, sample_rate)?
+        let store = app.store("settings.json").map_err(|e| e.to_string())?;
+        let key_opt = match store.get("groq_api_key") {
+            Some(val) => val.as_str().map(|s| s.to_string()),
+            None => None,
+        };
+        match key_opt {
+            Some(key) => {
+                println!("☁️ Using Groq for transcription");
+                let settings = AppSettings::get_or_default(&app);
+                groq::transcribe_with_groq(&audio_data, sample_rate, settings.whisper_language, &key).await?
+            }
+            None => {
+                println!("🧠 Using local Whisper for transcription");
+                let model = whisper_model.lock().unwrap();
+                let cfg = whisper::WhisperRuntimeConfig {
+                    language: AppSettings::get_or_default(&app).whisper_language,
+                    temperature: AppSettings::get_or_default(&app).whisper_temperature,
+                };
+                model.transcribe_with_config(&audio_data, sample_rate, &cfg)?
+            }
+        }
     };
     let transcribe_time = transcribe_start.elapsed();
     println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
@@ -368,6 +432,12 @@ async fn stop_recording_manual(
         }.emit(&app);
         
         if words > 0 {
+            let store = app.store("settings.json").map_err(|e| e.to_string())?;
+            let model_used = if store.get("groq_api_key").is_some() {
+                Some("groq/whisper-large-v3".to_string())
+            } else {
+                settings.selected_model.clone()
+            };
             let transcript = Transcript {
                 id: uuid::Uuid::new_v4().to_string(),
                 text: text.clone(),
@@ -375,7 +445,7 @@ async fn stop_recording_manual(
                 duration_ms: session_duration_ms,
                 word_count: words,
                 wpm: session_wpm,
-                model_used: settings.selected_model.clone(),
+                model_used,
             };
             
             let mut store = TranscriptStore::load(&app).unwrap_or_default();
@@ -418,8 +488,27 @@ async fn stop_recording_chunked(
     
     let transcribe_start = std::time::Instant::now();
     let text = {
-        let model = whisper_model.lock().unwrap();
-        model.transcribe(&audio_data, sample_rate)?
+        let store = app.store("settings.json").map_err(|e| e.to_string())?;
+        let key_opt = match store.get("groq_api_key") {
+            Some(val) => val.as_str().map(|s| s.to_string()),
+            None => None,
+        };
+        match key_opt {
+            Some(key) => {
+                println!("☁️ Using Groq for transcription");
+                let settings = AppSettings::get_or_default(&app);
+                groq::transcribe_with_groq(&audio_data, sample_rate, settings.whisper_language, &key).await?
+            }
+            None => {
+                println!("🧠 Using local Whisper for transcription");
+                let model = whisper_model.lock().unwrap();
+                let cfg = whisper::WhisperRuntimeConfig {
+                    language: AppSettings::get_or_default(&app).whisper_language,
+                    temperature: AppSettings::get_or_default(&app).whisper_temperature,
+                };
+                model.transcribe_with_config(&audio_data, sample_rate, &cfg)?
+            }
+        }
     };
     let transcribe_time = transcribe_start.elapsed();
     println!("⏱️ Transcription took: {:?} (RTF: {:.2}x)", transcribe_time, transcribe_time.as_secs_f32() / audio_duration_secs);
@@ -478,6 +567,12 @@ async fn stop_recording_chunked(
         WordCountUpdated { count: settings.word_count }.emit(&app).ok();
         
         if !text.is_empty() {
+            let store = app.store("settings.json").map_err(|e| e.to_string())?;
+            let model_used = if store.get("groq_api_key").is_some() {
+                Some("groq/whisper-large-v3".to_string())
+            } else {
+                settings.selected_model.clone()
+            };
             let transcript = Transcript {
                 id: uuid::Uuid::new_v4().to_string(),
                 text: text.clone(),
@@ -485,7 +580,7 @@ async fn stop_recording_chunked(
                 duration_ms: session_duration_ms,
                 word_count: words,
                 wpm: session_wpm,
-                model_used: settings.selected_model.clone(),
+                model_used,
             };
             
             let mut store = TranscriptStore::load(&app).unwrap_or_default();
@@ -920,6 +1015,33 @@ fn get_model_path(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+#[specta::specta]
+fn set_groq_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set("groq_api_key", serde_json::Value::String(key));
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn clear_groq_api_key(app: tauri::AppHandle) -> Result<(), String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.delete("groq_api_key");
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn has_groq_api_key(app: tauri::AppHandle) -> Result<bool, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let exists = match store.get("groq_api_key") {
+        Some(val) => val.as_str().is_some(),
+        None => false,
+    };
+    Ok(exists)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let audio_manager = Arc::new(AudioManager::new());
@@ -959,7 +1081,12 @@ pub fn run() {
             get_available_models,
             get_downloaded_models,
             get_selected_model,
-            set_selected_model
+            set_selected_model,
+            set_groq_api_key,
+            clear_groq_api_key,
+            has_groq_api_key,
+            get_whisper_settings,
+            set_whisper_settings
         ])
         .events(collect_events![
             TranscriptionProgress,

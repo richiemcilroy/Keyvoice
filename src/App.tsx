@@ -48,6 +48,10 @@ function App() {
   const [systemInfo, setSystemInfo] = createSignal<{ isAppleSilicon: boolean }>(
     { isAppleSilicon: false }
   );
+  const [groqConnected, setGroqConnected] = createSignal(false);
+  const [groqKeyInput, setGroqKeyInput] = createSignal("");
+  const [whisperLanguage, setWhisperLanguage] = createSignal<string>("en");
+  const [whisperTemperature, setWhisperTemperature] = createSignal<number>(0);
   const [recordingStats, setRecordingStats] = createSignal({
     total_words: 0,
     total_time_ms: 0,
@@ -165,6 +169,18 @@ function App() {
     );
 
     try {
+      const groqStatus = await commands.hasGroqApiKey();
+      if (groqStatus.status === "ok") {
+        setGroqConnected(groqStatus.data);
+      }
+
+      const ws = await commands.getWhisperSettings();
+      if (ws.status === "ok") {
+        const [lang, temp] = ws.data;
+        setWhisperLanguage(lang || "auto");
+        setWhisperTemperature(temp ?? 0);
+      }
+
       const devicesResult = await commands.getAudioDevices();
       if (devicesResult.status === "ok") {
         setAudioDevices(devicesResult.data);
@@ -374,9 +390,9 @@ function App() {
   };
 
   const handleManualRecordingToggle = async () => {
-    if (!micPermission() || !modelDownloaded()) {
+    if (!micPermission() || (!modelDownloaded() && !groqConnected())) {
       toast.error(
-        "Please grant microphone permission and download a model first"
+        "Please grant microphone permission and connect Groq or download a model"
       );
       return;
     }
@@ -570,7 +586,7 @@ function App() {
                 }}
                 disabled={
                   !micPermission() ||
-                  !modelDownloaded() ||
+                  (!modelDownloaded() && !groqConnected()) ||
                   isProcessingTranscription()
                 }
               >
@@ -711,7 +727,7 @@ function App() {
                 </h3>
                 <div class="p-4 bg-dark-secondary rounded-xl">
                   <Show
-                    when={!modelDownloaded()}
+                    when={!modelDownloaded() && !groqConnected()}
                     fallback={
                       <div>
                         <div class="flex items-center justify-between mb-3">
@@ -721,9 +737,16 @@ function App() {
                                 (m) => m.id === selectedModel()
                               )?.name || "Whisper"}
                             </p>
-                            <p class="text-xs text-gray-500">
-                              Ready for transcription
-                            </p>
+                            <Show
+                              when={!groqConnected()}
+                              fallback={
+                                <p class="text-xs text-gray-500">Using Groq</p>
+                              }
+                            >
+                              <p class="text-xs text-gray-500">
+                                Ready for transcription
+                              </p>
+                            </Show>
                           </div>
                           <div class="flex items-center text-xs text-gray-400">
                             <svg
@@ -826,6 +849,142 @@ function App() {
                         </button>
                       </div>
                     </Show>
+                  </Show>
+                </div>
+              </div>
+
+              <div class="mb-6">
+                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  Whisper Settings
+                </h3>
+                <div class="p-4 bg-dark-secondary rounded-xl space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-white">Language</p>
+                      <p class="text-xs text-gray-500">
+                        Auto-detect or force a language
+                      </p>
+                    </div>
+                    <select
+                      value={whisperLanguage()}
+                      onChange={async (e) => {
+                        const newLang = e.currentTarget.value;
+                        setWhisperLanguage(newLang);
+                        await commands.setWhisperSettings(
+                          newLang === "auto" ? null : newLang,
+                          whisperTemperature()
+                        );
+                      }}
+                      class="select-minimal"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="it">Italian</option>
+                      <option value="pt">Portuguese</option>
+                    </select>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-white">Temperature</p>
+                      <p class="text-xs text-gray-500">
+                        0.0 = most deterministic
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="0"
+                        max="0.8"
+                        step="0.1"
+                        value={whisperTemperature()}
+                        onInput={async (e) => {
+                          const v = Number(e.currentTarget.value);
+                          setWhisperTemperature(v);
+                          await commands.setWhisperSettings(
+                            whisperLanguage() === "auto"
+                              ? null
+                              : whisperLanguage(),
+                            v
+                          );
+                        }}
+                      />
+                      <span class="text-xs text-gray-400 w-8 text-right">
+                        {whisperTemperature().toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-6">
+                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  Cloud Transcription (Groq)
+                </h3>
+                <div class="p-4 bg-dark-secondary rounded-xl space-y-3">
+                  <Show
+                    when={!groqConnected()}
+                    fallback={
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-sm font-medium text-white">
+                            Connected
+                          </p>
+                          <p class="text-xs text-gray-500">
+                            Transcription will use Groq
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const res = await commands.clearGroqApiKey();
+                            if (res.status === "ok") {
+                              setGroqConnected(false);
+                              toast.success("Groq disconnected");
+                            } else {
+                              toast.error("Failed to disconnect Groq");
+                            }
+                          }}
+                          class="btn-secondary"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    }
+                  >
+                    <div class="flex gap-3">
+                      <input
+                        value={groqKeyInput()}
+                        onInput={(e) => setGroqKeyInput(e.currentTarget.value)}
+                        type="password"
+                        placeholder="Enter Groq API key"
+                        class="flex-1 input-minimal"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!groqKeyInput().trim()) return;
+                          const res = await commands.setGroqApiKey(
+                            groqKeyInput().trim()
+                          );
+                          if (res.status === "ok") {
+                            setGroqConnected(true);
+                            setGroqKeyInput("");
+                            toast.success("Groq connected");
+                          } else {
+                            toast.error("Failed to connect Groq");
+                          }
+                        }}
+                        class="btn-secondary"
+                      >
+                        Connect
+                      </button>
+                    </div>
+                    <p class="text-xs text-gray-500">
+                      When connected, Groq will be used instead of the local
+                      model.
+                    </p>
                   </Show>
                 </div>
               </div>

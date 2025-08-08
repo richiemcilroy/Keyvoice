@@ -14,6 +14,21 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 const WHISPER_SAMPLE_RATE: u32 = 16_000;
 
+#[derive(Clone)]
+pub struct WhisperRuntimeConfig {
+    pub language: Option<String>,
+    pub temperature: Option<f32>,
+}
+
+impl Default for WhisperRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            language: Some("en".to_string()),
+            temperature: Some(0.0),
+        }
+    }
+}
+
 static RESAMPLER_CACHE: Lazy<Mutex<HashMap<(u32, u32, usize), Arc<Mutex<FftFixedInOut<f32>>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -127,16 +142,24 @@ impl WhisperModel {
                 Some(std::env::current_dir().unwrap()),
                 Some(std::env::current_dir().unwrap().join("src-tauri")),
                 Some(std::env::current_dir().unwrap().join("src-tauri/src-tauri")),
-                Some(std::env::current_dir().unwrap().join("target/debug/build")
-                    .read_dir()
-                    .ok()
-                    .and_then(|entries| {
-                        entries
-                            .filter_map(|e| e.ok())
-                            .find(|e| e.file_name().to_string_lossy().starts_with("whisper-rs-sys-"))
-                            .map(|e| e.path().join("out/build/bin"))
-                    })
-                    .unwrap_or_default()),
+                Some(
+                    std::env::current_dir()
+                        .unwrap()
+                        .join("target/debug/build")
+                        .read_dir()
+                        .ok()
+                        .and_then(|entries| {
+                            entries
+                                .filter_map(|e| e.ok())
+                                .find(|e| {
+                                    e.file_name()
+                                        .to_string_lossy()
+                                        .starts_with("whisper-rs-sys-")
+                                })
+                                .map(|e| e.path().join("out/build/bin"))
+                        })
+                        .unwrap_or_default(),
+                ),
             ];
 
             for path_opt in possible_paths {
@@ -168,6 +191,15 @@ impl WhisperModel {
     }
 
     pub fn transcribe(&self, audio_data: &[f32], sample_rate: u32) -> Result<String, String> {
+        self.transcribe_with_config(audio_data, sample_rate, &WhisperRuntimeConfig::default())
+    }
+
+    pub fn transcribe_with_config(
+        &self,
+        audio_data: &[f32],
+        sample_rate: u32,
+        config: &WhisperRuntimeConfig,
+    ) -> Result<String, String> {
         let start_time = std::time::Instant::now();
 
         let context = self
@@ -197,7 +229,7 @@ impl WhisperModel {
         params.set_suppress_non_speech_tokens(true);
 
         params.set_temperature_inc(0.0);
-        params.set_temperature(0.0);
+        params.set_temperature(config.temperature.unwrap_or(0.0));
 
         params.set_single_segment(true);
         params.set_no_timestamps(true);
@@ -205,7 +237,7 @@ impl WhisperModel {
         params.set_max_initial_ts(0.0);
         params.set_max_len(0);
         params.set_split_on_word(false);
-        
+
         params.set_token_timestamps(false);
         params.set_n_max_text_ctx(16384);
 
@@ -214,8 +246,15 @@ impl WhisperModel {
             .unwrap_or(4) as i32;
         println!("📦 Using {} threads for transcription", num_threads);
         params.set_n_threads(num_threads);
-        params.set_language(Some("en"));
-        
+        let language_opt = config.language.as_ref().and_then(|s| {
+            if s.trim().is_empty() || s.eq_ignore_ascii_case("auto") {
+                None
+            } else {
+                Some(s)
+            }
+        });
+        params.set_language(language_opt.map(|s| s.as_str()));
+
         params.set_no_context(true);
 
         let mut state = context
