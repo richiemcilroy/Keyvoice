@@ -7,3 +7,5 @@ TalkType transcribes your voice in realtime and places the text wherever you poi
 Everything happens and stays completely on device. 100% privacy friendly.
 
 ## Test
+
+Testing right here!
