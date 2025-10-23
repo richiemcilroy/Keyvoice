@@ -111,6 +111,8 @@ impl AudioManager {
         let app_handle_clone = self.app_handle.lock().await.clone();
         let peak_level_clone = self.peak_level.clone();
 
+        println!("🎤 AudioManager: Building input stream");
+
         let sample_format = default_config.sample_format();
 
         let mut build_for_config = |cfg: cpal::StreamConfig| -> Result<cpal::Stream, String> {
@@ -213,7 +215,7 @@ impl AudioManager {
                     }
 
                     let rms = (sum / frames as f32).sqrt();
-                    
+
                     let mut current_peak = peak_level.blocking_lock();
                     if rms > *current_peak {
                         *current_peak = rms;
@@ -248,7 +250,12 @@ impl AudioManager {
         let sample_rate = *self.sample_rate.lock().await;
         let peak_level = *self.peak_level.lock().await;
 
-        println!("📊 Recorded {} samples at {} Hz, peak level: {:.4}", buffer.len(), sample_rate, peak_level);
+        println!(
+            "📊 Recorded {} samples at {} Hz, peak level: {:.4}",
+            buffer.len(),
+            sample_rate,
+            peak_level
+        );
 
         Ok((buffer.clone(), sample_rate, peak_level))
     }
