@@ -3,6 +3,8 @@ import solid from "vite-plugin-solid";
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 
+// adding a comment here
+
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
