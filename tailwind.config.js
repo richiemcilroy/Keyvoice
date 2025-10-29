@@ -21,3 +21,5 @@ export default {
   },
   plugins: [],
 }
+
+// adding a comment here
